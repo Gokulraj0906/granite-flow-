@@ -152,6 +152,7 @@ export default function AuthPages() {
       
       console.log('Profile created successfully');
       
+      
       // Also create role entry
       try {
         await assignUserRole(userId);
@@ -388,7 +389,7 @@ export default function AuthPages() {
           </CardHeader>
           <CardContent className="space-y-6">
             <p className="text-center text-gray-300">
-              You are signed in as {user.email}
+              You are signed in as {user.email} and your user ID is {user.id}.
             </p>
             {profileCreationPending && (
               <div className="p-3 bg-blue-500/20 border border-blue-500/50 rounded-lg text-blue-300 text-sm">

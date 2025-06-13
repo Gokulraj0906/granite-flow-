@@ -207,7 +207,7 @@ export default function GraniteFlowLanding() {
               </button>
               <div className="flex items-center gap-3">
                 <Button variant="outline" className="border-teal-400/50 text-teal-400 hover:bg-teal-400 hover:text-white transition-all duration-300">
-                  Login
+                  <a href="/auth">Login</a>
                 </Button>
                 <Button className="bg-gradient-to-r from-teal-500 to-purple-500 hover:from-teal-600 hover:to-purple-600 text-white font-semibold transition-all duration-300 transform hover:scale-105">
                   Free Trial

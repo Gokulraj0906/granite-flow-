@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { 
-  BrowserRouter, 
   Routes, 
   Route, 
   Navigate, 
   useNavigate, 
   Link,
-  Outlet
+  Outlet,
+  useLocation,
+  useOutletContext
 } from "react-router-dom";
 import { 
   Home, 
@@ -16,15 +17,10 @@ import {
   Settings, 
   LogOut, 
   PlusCircle,
-  Trash2, 
-  Edit2, 
   Search, 
   ChevronDown, 
   Shield,
-  RefreshCw,
   UserPlus,
-  FileText,
-  Send,
   Calendar,
   Building,
   HelpCircle,
@@ -34,17 +30,16 @@ import {
   X,
   Database,
   Bell,
-  AlertCircle
+  User
 } from "lucide-react";
 import supabase from "@/lib/supabaseClient";
 
 // Component imports - in a real app these would be in separate files
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,7 +54,7 @@ import { Separator } from "@/components/ui/separator";
 // User role constants
 const USER_ROLES = {
   MEMBER: "member",
-  ORG_ADMIN: "org_admin",
+  ORG_ADMIN: "org_admin", 
   SYSTEM_ADMIN: "system_admin"
 };
 
@@ -79,24 +74,24 @@ function AuthPage() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<AuthPage />} />
+      <Route path="/auth" element={<AuthPage />} />
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="overview" element={<DashboardOverview />} />
         <Route path="tasks" element={<TasksView />} />
         <Route path="team" element={<TeamView />} />
         <Route path="calendar" element={<CalendarView />} />
-        
+
         {/* Organization Admin Routes */}
         <Route path="members" element={<AdminRoute><MembersView /></AdminRoute>} />
         <Route path="analytics" element={<AdminRoute><AnalyticsView /></AdminRoute>} />
         <Route path="org-settings" element={<AdminRoute><OrganizationSettingsView /></AdminRoute>} />
-        
+
         {/* System Admin Routes */}
         <Route path="organizations" element={<SystemAdminRoute><OrganizationsView /></SystemAdminRoute>} />
         <Route path="all-users" element={<SystemAdminRoute><AllUsersView /></SystemAdminRoute>} />
         <Route path="system-settings" element={<SystemAdminRoute><SystemSettingsView /></SystemAdminRoute>} />
-        
+
         {/* Help & Support */}
         <Route path="help" element={<HelpSupportView />} />
       </Route>
@@ -104,11 +99,41 @@ export default function App() {
   );
 }
 
+// Types
+type ProtectedRouteProps = {
+  children: React.ReactNode;
+};
+
+type AdminRouteProps = {
+  children: React.ReactNode;
+};
+
+type SystemAdminRouteProps = {
+  children: React.ReactNode;
+};
+
+type UserRoleType = typeof USER_ROLES[keyof typeof USER_ROLES];
+
+type UserType = {
+  id: string;
+  email: string;
+  user_metadata?: {
+    avatar_url?: string;
+    full_name?: string;
+  };
+};
+
+type UserRoleRecord = {
+  id: string;
+  user_id: string;
+  role: string;
+};
+
 // Protected Route Component
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -121,10 +146,18 @@ function ProtectedRoute({ children }) {
         setIsLoading(false);
       }
     };
-    
+
     checkAuth();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
-  
+
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-gray-900">
@@ -135,39 +168,39 @@ function ProtectedRoute({ children }) {
       </div>
     );
   }
-  
-  return isAuthenticated ? children : <Navigate to="/" replace />;
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return <>{children}</>;
 }
 
 // Admin Route Component
-function AdminRoute({ children }) {
-  const [userRole, setUserRole] = useState(null);
+function AdminRoute({ children }: AdminRouteProps) {
+  const [userRole, setUserRole] = useState<UserRoleType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     const checkRole = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
+          setUserRole(null);
           return;
         }
-        
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', session.user.id)
-          .single();
-          
-        const { data: systemAdmin } = await supabase
-          .from('system_admins')
-          .select('id')
+
+        // Check user role from user_roles table
+        const { data: userRoleData } = await supabase
+          .from('user_roles')
+          .select('role')
           .eq('user_id', session.user.id)
-          .maybeSingle();
-          
-        if (systemAdmin) {
+          .single();
+
+        if (userRoleData?.role === 'system_admin') {
           setUserRole(USER_ROLES.SYSTEM_ADMIN);
-        } else if (profile?.is_admin) {
+        } else if (userRoleData?.role === 'org_admin') {
           setUserRole(USER_ROLES.ORG_ADMIN);
         } else {
           setUserRole(USER_ROLES.MEMBER);
@@ -179,42 +212,43 @@ function AdminRoute({ children }) {
         setIsLoading(false);
       }
     };
-    
+
     checkRole();
   }, []);
-  
+
   if (isLoading) {
     return <div className="p-8">Loading access permissions...</div>;
   }
-  
-  if (userRole === USER_ROLES.MEMBER) {
+
+  if (userRole === USER_ROLES.MEMBER || !userRole) {
     return <Navigate to="/overview" replace />;
   }
-  
-  return children;
+
+  return <>{children}</>;
 }
 
 // System Admin Route Component
-function SystemAdminRoute({ children }) {
+function SystemAdminRoute({ children }: SystemAdminRouteProps) {
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     const checkRole = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
+          setIsSystemAdmin(false);
           return;
         }
-        
-        const { data: systemAdmin } = await supabase
-          .from('system_admins')
-          .select('id')
+
+        const { data: userRoleData } = await supabase
+          .from('user_roles')
+          .select('role')
           .eq('user_id', session.user.id)
-          .maybeSingle();
-          
-        setIsSystemAdmin(!!systemAdmin);
+          .single();
+
+        setIsSystemAdmin(userRoleData?.role === 'system_admin');
       } catch (error) {
         console.error('Admin check error:', error);
         setIsSystemAdmin(false);
@@ -222,86 +256,97 @@ function SystemAdminRoute({ children }) {
         setIsLoading(false);
       }
     };
-    
+
     checkRole();
   }, []);
-  
+
   if (isLoading) {
     return <div className="p-8">Loading access permissions...</div>;
   }
-  
+
   if (!isSystemAdmin) {
     return <Navigate to="/overview" replace />;
   }
-  
-  return children;
+
+  return <>{children}</>;
 }
 
-// Dashboard Layout Component
 function DashboardLayout() {
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [organization, setOrganization] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  const [user, setUser] = useState<UserType | null>(null);
+  const [userRole, setUserRole] = useState<UserRoleType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  const navigate = useNavigate();
 
-  // Check auth state and fetch user profile
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check auth state and fetch user role
   useEffect(() => {
     const checkAuth = async () => {
       try {
         setIsLoading(true);
-        
+
         // Get current session
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
-          navigate('/');
+          navigate('/auth');
           return;
         }
-        
-        setUser(session.user);
-        
-        // Fetch user profile with organization data
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select(`
-            *,
-            organizations:organization_id (
-              id,
-              name,
-              created_at
-            )
-          `)
-          .eq('id', session.user.id)
-          .single();
-          
-        if (profileError) throw profileError;
-        
-        setProfile(profileData);
-        setOrganization(profileData.organizations);
-        
-        // Determine user role
-        const { data: systemAdmin } = await supabase
-          .from('system_admins')
-          .select('id')
+
+        setUser(session.user as UserType);
+
+        // Fetch user role
+        const { data: userRoleData, error: roleError } = await supabase
+          .from('user_roles')
+          .select('role')
           .eq('user_id', session.user.id)
-          .maybeSingle();
+          .single();
+
+        if (roleError) {
+          console.error('Role fetch error:', roleError);
           
-        if (systemAdmin) {
-          setUserRole(USER_ROLES.SYSTEM_ADMIN);
-        } else if (profileData.is_admin) {
-          setUserRole(USER_ROLES.ORG_ADMIN);
+          // If no role exists, create a default member role
+          if (roleError.code === 'PGRST116') {
+            console.log('No role found for user, creating member role...');
+            const { data: newRole, error: createError } = await supabase
+              .from('user_roles')
+              .insert([
+                {
+                  user_id: session.user.id,
+                  role: 'member'
+                }
+              ])
+              .select()
+              .single();
+              
+            if (createError) {
+              console.error('Error creating role:', createError);
+              setUserRole(USER_ROLES.MEMBER);
+            } else {
+              setUserRole(USER_ROLES.MEMBER);
+            }
+          } else {
+            setUserRole(USER_ROLES.MEMBER);
+          }
         } else {
-          setUserRole(USER_ROLES.MEMBER);
+          // Map the role from database to our constants
+          switch (userRoleData.role) {
+            case 'system_admin':
+              setUserRole(USER_ROLES.SYSTEM_ADMIN);
+              break;
+            case 'org_admin':
+              setUserRole(USER_ROLES.ORG_ADMIN);
+              break;
+            default:
+              setUserRole(USER_ROLES.MEMBER);
+          }
         }
       } catch (error) {
         console.error('Authentication error:', error);
         alert("There was a problem loading your profile. Please try signing in again.");
-        navigate('/');
+        navigate('/auth');
       } finally {
         setIsLoading(false);
       }
@@ -309,25 +354,24 @@ function DashboardLayout() {
     
     checkAuth();
   }, [navigate]);
-  
+
   // Handle sign out
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
-      navigate('/');
+      navigate('/auth');
     } catch (error) {
       console.error('Sign out error:', error);
       alert("Failed to sign out. Please try again.");
     }
   };
-  
+
   // Toggle dark mode
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
-    // In a real app, you would apply a class to the root element or use a theme provider
     document.documentElement.classList.toggle('dark');
   };
-  
+
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-gray-900">
@@ -338,7 +382,7 @@ function DashboardLayout() {
       </div>
     );
   }
-  
+
   return (
     <div className={`min-h-screen bg-gray-50 ${darkMode ? 'dark bg-gray-900 text-gray-100' : ''}`}>
       {/* Top Navigation Bar */}
@@ -356,17 +400,17 @@ function DashboardLayout() {
             <Shield className="h-6 w-6 text-teal-500" />
             <span className="font-bold text-xl">Granite Flow</span>
           </div>
-          
-          <div className="hidden lg:flex items-center space-x-1">
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 dark:text-gray-400" />
             <Input 
               type="search" 
               placeholder="Search..." 
-              className="w-64 h-9 bg-gray-100 dark:bg-gray-700 border-none"
-              prefix={<Search className="h-4 w-4 text-gray-500 dark:text-gray-400" />}
+              className="w-64 h-9 pl-10 bg-gray-100 dark:bg-gray-700 border-none"
             />
           </div>
         </div>
-        
         <div className="flex items-center gap-3">
           <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
             <Bell size={18} />
@@ -385,11 +429,11 @@ function DashboardLayout() {
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={user?.user_metadata?.avatar_url} />
                   <AvatarFallback className="bg-teal-100 text-teal-800 dark:bg-teal-800 dark:text-teal-100">
-                    {profile?.full_name?.split(' ').map(n => n[0]).join('') || user?.email?.[0]?.toUpperCase()}
+                    {user?.user_metadata?.full_name?.split(' ').map(n => n[0]).join('') || user?.email?.[0]?.toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden lg:inline text-sm font-medium">
-                  {profile?.full_name || user?.email}
+                  {user?.user_metadata?.full_name || user?.email}
                 </span>
                 <ChevronDown size={16} />
               </button>
@@ -397,7 +441,7 @@ function DashboardLayout() {
             <DropdownMenuContent className="w-56 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
               <DropdownMenuLabel>
                 <div className="flex flex-col">
-                  <span>{profile?.full_name}</span>
+                  <span>{user?.user_metadata?.full_name || 'User'}</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">{user?.email}</span>
                 </div>
               </DropdownMenuLabel>
@@ -422,7 +466,7 @@ function DashboardLayout() {
           </DropdownMenu>
         </div>
       </header>
-      
+
       {/* Main Layout */}
       <div className="flex h-screen pt-16">
         {/* Sidebar Navigation */}
@@ -435,8 +479,11 @@ function DashboardLayout() {
             <div className="px-4 py-3 border-b border-gray-700">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-300 mb-1">Organization</p>
-                  <p className="font-semibold">{organization?.name || "No Organization"}</p>
+                  <p className="text-sm font-medium text-gray-300 mb-1">Your Role</p>
+                  <p className="font-semibold">
+                    {userRole === USER_ROLES.SYSTEM_ADMIN ? 'System Admin' : 
+                     userRole === USER_ROLES.ORG_ADMIN ? 'Organization Admin' : 'Member'}
+                  </p>
                 </div>
                 <Badge className={`
                   ${userRole === USER_ROLES.SYSTEM_ADMIN 
@@ -446,7 +493,8 @@ function DashboardLayout() {
                       : 'bg-green-500 hover:bg-green-600'}
                   text-white px-2.5 py-0.5 text-xs font-medium
                 `}>
-                  {userRole === USER_ROLES.SYSTEM_ADMIN ? 'ADMIN' : userRole === USER_ROLES.ORG_ADMIN ? 'ORG ADMIN' : 'MEMBER'}
+                  {userRole === USER_ROLES.SYSTEM_ADMIN ? 'ADMIN' : 
+                   userRole === USER_ROLES.ORG_ADMIN ? 'ORG ADMIN' : 'MEMBER'}
                 </Badge>
               </div>
             </div>
@@ -507,17 +555,17 @@ function DashboardLayout() {
                   <Separator className="my-4 bg-gray-700" />
                   <p className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase">Admin</p>
                   
-                  <Link
-                    to="/members"
-                    className={`flex items-center w-full px-3 py-2 rounded-lg text-sm transition-colors ${
-                      location.pathname === "/members" 
-                        ? "bg-gray-700 text-white" 
-                        : "text-gray-300 hover:bg-gray-700 hover:text-white"
-                    }`}
-                  >
-                    <UserPlus className="mr-3 h-5 w-5" />
-                    Manage Members
-                  </Link>
+                    <button
+                      onClick={() => navigate("/members")}
+                      className={`flex items-center w-full px-3 py-2 rounded-lg text-sm transition-colors ${
+                        location.pathname === "/members" 
+                          ? "bg-gray-700 text-white" 
+                          : "text-gray-300 hover:bg-gray-700 hover:text-white"
+                      }`}
+                    >
+                      <UserPlus className="mr-3 h-5 w-5" />
+                      Manage Members
+                    </button>
                   
                   <Link
                     to="/analytics"
@@ -588,89 +636,225 @@ function DashboardLayout() {
                   </Link>
                 </>
               )}
-            </nav>
-            
-            <div className="p-4 border-t border-gray-700">
-              <Link to="/help">
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start text-gray-300 border-gray-600 hover:text-white hover:bg-gray-700"
-                >
-                  <HelpCircle className="mr-2 h-4 w-4" />
-                  Help & Support
-                </Button>
+              <Separator className="my-4 bg-gray-700" />
+              <Link
+                to="/help"
+                className={`flex items-center w-full px-3 py-2 rounded-lg text-sm transition-colors ${
+                  location.pathname === "/help" 
+                    ? "bg-gray-700 text-white" 
+                    : "text-gray-300 hover:bg-gray-700 hover:text-white"
+                }`}
+              >
+                <HelpCircle className="mr-3 h-5 w-5" />
+                Help & Support
               </Link>
-            </div>
+            </nav>
           </div>
         </aside>
-        
+
         {/* Main Content */}
-        <main className="flex-1 ml-0 lg:ml-64 p-4 lg:p-8 bg-gray-50 dark:bg-gray-900 overflow-auto">
-          <Outlet context={{ userRole, profile, organization, user }} />
+        <main className="flex-1 ml-0 lg:ml-64 bg-gray-50 dark:bg-gray-900 p-6 overflow-y-auto">
+          <Outlet context={{ userRole, user }} />
         </main>
       </div>
     </div>
   );
 }
 
-// Placeholder for User component
-function User({ className, ...props }) {
-  return <span className={className} {...props}>👤</span>;
-}
-
-// Placeholder for Clock component
-function Clock({ className }) {
-  return <span className={className}>⏱️</span>;
-}
-
-// DashboardOverview Component - Access context from the Outlet
 function DashboardOverview() {
-  const { userRole, profile, organization } = useOutletContext();
+  const { userRole, user } = useOutletContext<{userRole: UserRoleType | null, user: UserType | null}>();
   
-  // Component implementation same as before, but use the context from the outlet
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Welcome, {profile?.full_name?.split(' ')[0] || 'User'}</h1>
-      {/* Rest of the component... */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">
+          Welcome back, {user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
+        </h1>
+        <Button>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Create Task
+        </Button>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Tasks</CardTitle>
+            <CheckSquare className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">12</div>
+            <p className="text-xs text-muted-foreground">+2 from last week</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Team Members</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">8</div>
+            <p className="text-xs text-muted-foreground">Active members</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
+            <BarChart className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">85%</div>
+            <Progress value={85} className="mt-2" />
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Your Role</CardTitle>
+            <User className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-lg font-semibold">
+              {userRole === USER_ROLES.SYSTEM_ADMIN ? 'System Admin' : 
+               userRole === USER_ROLES.ORG_ADMIN ? 'Org Admin' : 'Member'}
+            </div>
+            <p className="text-xs text-muted-foreground">Current access level</p>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Welcome to Granite Flow</CardTitle>
+          <CardDescription>
+            You're logged in as {user?.email} with {userRole} privileges.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Your dashboard is ready to go! Start by exploring the navigation menu.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-// Other view components follow the same pattern
+// Rest of your view components remain the same...
 function TasksView() {
-  return <h1 className="text-2xl font-bold mb-4">My Tasks</h1>;
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">My Tasks</h1>
+        <Button>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add Task
+        </Button>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Task List</CardTitle>
+          <CardDescription>Manage your current tasks and assignments</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Task management interface would be implemented here
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function TeamView() {
-  return <h1 className="text-2xl font-bold mb-4">Team Members</h1>;
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Team</h1>
+        <Button>
+          <UserPlus className="mr-2 h-4 w-4" />
+          Invite Member
+        </Button>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Team Members</CardTitle>
+          <CardDescription>View and manage your team</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Team management interface would be implemented here
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function CalendarView() {
-  return <h1 className="text-2xl font-bold mb-4">Calendar</h1>;
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Calendar</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Calendar</CardTitle>
+          <CardDescription>View your schedule and upcoming events</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Calendar interface would be implemented here
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function MembersView() {
-  const { organization } = useOutletContext();
-  
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-4">Manage Members</h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-6">
-        Manage team members for {organization?.name}
-      </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Manage Members</h1>
+          <p className="text-gray-500 dark:text-gray-400">
+            Manage team members for your organization
+          </p>
+        </div>
+        <Button>
+          <UserPlus className="mr-2 h-4 w-4" />
+          Invite Member
+        </Button>
+      </div>
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>Organization Members</CardTitle>
-            <Button>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Invite Member
-            </Button>
-          </div>
+          <CardTitle>Organization Members</CardTitle>
+          <CardDescription>View and manage all members in your organization</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Member table would go here */}
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">Member management interface</p>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Member management interface would be implemented here
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OrganizationSettingsView() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Organization Settings</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Organization Settings</CardTitle>
+          <CardDescription>Configure your organization preferences and settings</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Organization settings interface would be implemented here
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -678,34 +862,49 @@ function MembersView() {
 }
 
 function AnalyticsView() {
-  return <h1 className="text-2xl font-bold mb-4">Analytics</h1>;
-}
-
-function OrganizationSettingsView() {
-  return <h1 className="text-2xl font-bold mb-4">Organization Settings</h1>;
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Analytics</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Analytics Dashboard</CardTitle>
+          <CardDescription>View analytics and insights for your organization</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Analytics dashboard would be implemented here
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function OrganizationsView() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-4">Organizations</h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-6">
-        Manage all organizations across the system
-      </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Organizations</h1>
+          <p className="text-gray-500 dark:text-gray-400">
+            Manage all organizations across the system
+          </p>
+        </div>
+        <Button>
+          <Building className="mr-2 h-4 w-4" />
+          Add Organization
+        </Button>
+      </div>
       
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>All Organizations</CardTitle>
-            <Button>
-              <Building className="mr-2 h-4 w-4" />
-              Add Organization
-            </Button>
-          </div>
+          <CardTitle>All Organizations</CardTitle>
+          <CardDescription>System-wide organization management</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Organizations table would go here */}
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">Organization management interface</p>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            Organization management interface would be implemented here
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -713,35 +912,81 @@ function OrganizationsView() {
 }
 
 function AllUsersView() {
-  return <h1 className="text-2xl font-bold mb-4">All Users</h1>;
-}
-
-function SystemSettingsView() {
-  return <h1 className="text-2xl font-bold mb-4">System Settings</h1>;
-}
-
-function HelpSupportView() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-4">Help & Support</h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-6">
-        Find answers and get assistance with Granite Flow
-      </p>
-      
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">All Users</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Documentation & Resources</CardTitle>
+          <CardTitle>System Users</CardTitle>
+          <CardDescription>Manage all users across the platform</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <p className="text-center text-gray-500 dark:text-gray-400 py-4">
-              Help and support resources would be listed here
-            </p>
-          </div>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            User management interface would be implemented here
+          </p>
         </CardContent>
       </Card>
     </div>
   );
 }
 
-// Other components follow the same pattern...
+function SystemSettingsView() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">System Settings</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Global System Configuration</CardTitle>
+          <CardDescription>Configure system-wide settings and preferences</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            System settings interface would be implemented here
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function HelpSupportView() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Help & Support</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Documentation & Resources</CardTitle>
+          <CardDescription>Find answers and get assistance with Granite Flow</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">Getting Started</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Learn the basics of using Granite Flow
+              </p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">User Guide</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Detailed documentation for all features
+              </p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">Contact Support</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Get help from our support team
+              </p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">FAQ</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Frequently asked questions and answers
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
