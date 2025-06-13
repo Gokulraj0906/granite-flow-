@@ -34,9 +34,20 @@ import {
 } from "lucide-react";
 import supabase from "@/lib/supabaseClient";
 
-// Component imports - in a real app these would be in separate files
+import DashboardOverview from "./Overview";
+import TasksView from "./TasksView";
+import TeamView from "./TeamView";
+import CalendarView from "./CalendarView";
+import MembersView from "./MembersView";
+import AnalyticsView from "./AnalyticsView";
+import OrganizationSettingsView from "./OrganizationSettingsView";
+import OrganizationsView from "./OrganizationsView";
+import AllUsersView from "./AllUsersView";
+import HelpSupportView from "./HelpSupportView";
+
+
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback} from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -118,16 +129,11 @@ type UserType = {
   id: string;
   email: string;
   user_metadata?: {
-    avatar_url?: string;
-    full_name?: string;
+    first_name?: string;
+    last_name?: string;
   };
 };
 
-type UserRoleRecord = {
-  id: string;
-  user_id: string;
-  role: string;
-};
 
 // Protected Route Component
 function ProtectedRoute({ children }: ProtectedRouteProps) {
@@ -310,7 +316,7 @@ function DashboardLayout() {
           // If no role exists, create a default member role
           if (roleError.code === 'PGRST116') {
             console.log('No role found for user, creating member role...');
-            const { data: newRole, error: createError } = await supabase
+            const { error: createError } = await supabase
               .from('user_roles')
               .insert([
                 {
@@ -427,13 +433,12 @@ function DashboardLayout() {
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={user?.user_metadata?.avatar_url} />
                   <AvatarFallback className="bg-teal-100 text-teal-800 dark:bg-teal-800 dark:text-teal-100">
-                    {user?.user_metadata?.full_name?.split(' ').map(n => n[0]).join('') || user?.email?.[0]?.toUpperCase()}
+                    {user?.user_metadata?.first_name?.split(' ').map(n => n[0]).join('') || user?.email?.[0]?.toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden lg:inline text-sm font-medium">
-                  {user?.user_metadata?.full_name || user?.email}
+                  {user?.user_metadata?.first_name + ' ' + user?.user_metadata?.last_name || 'User'}
                 </span>
                 <ChevronDown size={16} />
               </button>
@@ -441,7 +446,7 @@ function DashboardLayout() {
             <DropdownMenuContent className="w-56 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
               <DropdownMenuLabel>
                 <div className="flex flex-col">
-                  <span>{user?.user_metadata?.full_name || 'User'}</span>
+                  <span>{user?.user_metadata?.first_name + ' ' + user?.user_metadata?.last_name || 'User'}</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">{user?.email}</span>
                 </div>
               </DropdownMenuLabel>
@@ -661,275 +666,6 @@ function DashboardLayout() {
   );
 }
 
-function DashboardOverview() {
-  const { userRole, user } = useOutletContext<{userRole: UserRoleType | null, user: UserType | null}>();
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">
-          Welcome back, {user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
-        </h1>
-        <Button>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Create Task
-        </Button>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Tasks</CardTitle>
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">12</div>
-            <p className="text-xs text-muted-foreground">+2 from last week</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Team Members</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">8</div>
-            <p className="text-xs text-muted-foreground">Active members</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
-            <BarChart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">85%</div>
-            <Progress value={85} className="mt-2" />
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Your Role</CardTitle>
-            <User className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-semibold">
-              {userRole === USER_ROLES.SYSTEM_ADMIN ? 'System Admin' : 
-               userRole === USER_ROLES.ORG_ADMIN ? 'Org Admin' : 'Member'}
-            </div>
-            <p className="text-xs text-muted-foreground">Current access level</p>
-          </CardContent>
-        </Card>
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Welcome to Granite Flow</CardTitle>
-          <CardDescription>
-            You're logged in as {user?.email} with {userRole} privileges.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Your dashboard is ready to go! Start by exploring the navigation menu.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// Rest of your view components remain the same...
-function TasksView() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">My Tasks</h1>
-        <Button>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Add Task
-        </Button>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Task List</CardTitle>
-          <CardDescription>Manage your current tasks and assignments</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Task management interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function TeamView() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Team</h1>
-        <Button>
-          <UserPlus className="mr-2 h-4 w-4" />
-          Invite Member
-        </Button>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Team Members</CardTitle>
-          <CardDescription>View and manage your team</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Team management interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function CalendarView() {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Calendar</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Calendar</CardTitle>
-          <CardDescription>View your schedule and upcoming events</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Calendar interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function MembersView() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Manage Members</h1>
-          <p className="text-gray-500 dark:text-gray-400">
-            Manage team members for your organization
-          </p>
-        </div>
-        <Button>
-          <UserPlus className="mr-2 h-4 w-4" />
-          Invite Member
-        </Button>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Organization Members</CardTitle>
-          <CardDescription>View and manage all members in your organization</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Member management interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function OrganizationSettingsView() {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Organization Settings</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Organization Settings</CardTitle>
-          <CardDescription>Configure your organization preferences and settings</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Organization settings interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function AnalyticsView() {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Analytics</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Analytics Dashboard</CardTitle>
-          <CardDescription>View analytics and insights for your organization</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Analytics dashboard would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function OrganizationsView() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Organizations</h1>
-          <p className="text-gray-500 dark:text-gray-400">
-            Manage all organizations across the system
-          </p>
-        </div>
-        <Button>
-          <Building className="mr-2 h-4 w-4" />
-          Add Organization
-        </Button>
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>All Organizations</CardTitle>
-          <CardDescription>System-wide organization management</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Organization management interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function AllUsersView() {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">All Users</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>System Users</CardTitle>
-          <CardDescription>Manage all users across the platform</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            User management interface would be implemented here
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 function SystemSettingsView() {
   return (
     <div className="space-y-6">
@@ -943,48 +679,6 @@ function SystemSettingsView() {
           <p className="text-center text-gray-500 dark:text-gray-400 py-8">
             System settings interface would be implemented here
           </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function HelpSupportView() {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Help & Support</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Documentation & Resources</CardTitle>
-          <CardDescription>Find answers and get assistance with Granite Flow</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold mb-2">Getting Started</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Learn the basics of using Granite Flow
-              </p>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold mb-2">User Guide</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Detailed documentation for all features
-              </p>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold mb-2">Contact Support</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Get help from our support team
-              </p>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold mb-2">FAQ</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Frequently asked questions and answers
-              </p>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

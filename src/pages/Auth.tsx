@@ -381,6 +381,7 @@ export default function AuthPages() {
 
   // If user is already logged in, show welcome screen
   if (user) {
+    console.log("User is already logged in:", user);
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-800 flex items-center justify-center p-4">
         <Card className="w-full max-w-md bg-gray-900/80 backdrop-blur-xl border-gray-700/50 shadow-2xl">
@@ -389,7 +390,7 @@ export default function AuthPages() {
           </CardHeader>
           <CardContent className="space-y-6">
             <p className="text-center text-gray-300">
-              You are signed in as {user.email} and your user ID is {user.id}.
+              You are signed in as {user.email} and your user ID is {user.id} and your name is {user.user_metadata?.first_name + ' ' + user.user_metadata?.last_name || 'N/A'}.
             </p>
             {profileCreationPending && (
               <div className="p-3 bg-blue-500/20 border border-blue-500/50 rounded-lg text-blue-300 text-sm">
